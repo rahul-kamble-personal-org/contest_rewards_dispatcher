@@ -1,4 +1,4 @@
-import { Context, APIGatewayProxyResult, APIGatewayEvent } from 'aws-lambda';
+import { Context } from 'aws-lambda';
 import * as winston from 'winston';
 
 // Configure Winston logger
@@ -13,7 +13,7 @@ const logger = winston.createLogger({
   ],
 });
 
-export const handler = async (event: APIGatewayEvent, context: Context): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: any, context: Context): Promise<any> => {
     // Log the event and context
     logger.info('Event received', { event });
     logger.info('Context', { context });
