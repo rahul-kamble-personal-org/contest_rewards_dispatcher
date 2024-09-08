@@ -11,6 +11,9 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     
     steps:
     - name: Checkout code
@@ -44,12 +47,14 @@ jobs:
         zip -r batchProcessorLambda.zip batchProcessorLambda
 
     - name: Configure AWS credentials
+      if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
       uses: aws-actions/configure-aws-credentials@v2
       with:
         role-to-assume: ${{ secrets.AWS_ROLE }}
         aws-region: eu-central-1
 
     - name: Upload Lambda artifacts to S3
+      if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
       run: |
         REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
         aws s3 cp dist/partitionProcessorLambda.zip s3://${{ secrets.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}/${REPO_NAME}/partitionProcessorLambda.zip
@@ -61,6 +66,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     
     steps:
     - name: Checkout code
