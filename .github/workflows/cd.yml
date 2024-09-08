@@ -1,0 +1,48 @@
+name: Continuous Deployment
+
+on:
+  workflow_dispatch:
+
+jobs:
+  terraform-cd:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE }}
+        aws-region: eu-central-1
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+
+    - name: Set S3 key name
+      run: |
+        REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
+        echo "S3_KEY=${REPO_NAME}/${{ secrets.AWS_BUCKET_KEY_NAME }}" >> $GITHUB_ENV
+
+    - name: Terraform Init
+      id: init
+      env:
+        AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
+        AWS_REGION: eu-central-1
+      run: |
+        cd terraform
+        terraform init -backend-config="bucket=${AWS_BUCKET_NAME}" -backend-config="key=${S3_KEY}" -backend-config="region=${AWS_REGION}"
+
+    - name: Terraform Plan
+      run: |
+        cd terraform
+        terraform plan -out=tfplan
+
+    - name: Terraform Apply
+      run: |
+        cd terraform
+        terraform apply tfplan
