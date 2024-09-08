@@ -83,7 +83,7 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
 
-    - name: Set S3 key name
+    - name: Set S3 key name and repo name
       run: |
         REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
         echo "S3_KEY=${REPO_NAME}/${{ secrets.AWS_BUCKET_KEY_NAME }}" >> $GITHUB_ENV
@@ -111,6 +111,7 @@ jobs:
     - name: Terraform Plan
       env:
         TF_VAR_lambda_artifacts_bucket_name: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
+        TF_VAR_repo_name: ${{ env.REPO_NAME }}
       run: |
         cd terraform
         terraform plan -var="repo_name=${REPO_NAME}"
