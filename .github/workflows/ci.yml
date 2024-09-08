@@ -55,10 +55,12 @@ jobs:
 
     - name: Upload Lambda artifacts to S3
       if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+      env:
+        S3_BUCKET: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
       run: |
         REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
-        aws s3 cp dist/partitionProcessorLambda.zip s3://${{ secrets.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}/${REPO_NAME}/partitionProcessorLambda.zip
-        aws s3 cp dist/batchProcessorLambda.zip s3://${{ secrets.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}/${REPO_NAME}/batchProcessorLambda.zip
+        aws s3 cp dist/partitionProcessorLambda.zip s3://${S3_BUCKET}/${REPO_NAME}/partitionProcessorLambda.zip
+        aws s3 cp dist/batchProcessorLambda.zip s3://${S3_BUCKET}/${REPO_NAME}/batchProcessorLambda.zip
 
   terraform-ci:
     needs: build-and-test
@@ -107,6 +109,8 @@ jobs:
         terraform validate
 
     - name: Terraform Plan
+      env:
+        TF_VAR_lambda_artifacts_bucket_name: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
       run: |
         cd terraform
-        terraform plan -var="lambda_artifacts_bucket_name=${{ secrets.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}" -var="repo_name=${REPO_NAME}"
+        terraform plan -var="repo_name=${REPO_NAME}"
