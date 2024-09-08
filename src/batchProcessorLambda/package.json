@@ -1,0 +1,21 @@
+{
+    "name": "batch-processor-lambda",
+    "version": "1.0.0",
+    "description": "Batch Processor Lambda Function",
+    "main": "dist/index.js",
+    "scripts": {
+      "build": "tsc",
+      "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "engines": {
+      "node": ">=18.0.0"
+    },
+    "dependencies": {
+      "winston": "^3.9.0"
+    },
+    "devDependencies": {
+      "@types/aws-lambda": "^8.10.119",
+      "@types/node": "^18.16.18",
+      "typescript": "^5.1.6"
+    }
+  }
