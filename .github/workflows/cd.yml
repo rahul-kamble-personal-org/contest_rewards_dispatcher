@@ -3,6 +3,10 @@ name: Continuous Deployment
 on:
   workflow_dispatch:
 
+env:
+  TF_CLI_ARGS: "-no-color"
+  TF_INPUT: "false"
+
 jobs:
   terraform-cd:
     runs-on: ubuntu-latest
@@ -36,13 +40,35 @@ jobs:
       run: |
         cd terraform
         terraform init -backend-config="bucket=${AWS_BUCKET_NAME}" -backend-config="key=${S3_KEY}" -backend-config="region=${AWS_REGION}"
+      timeout-minutes: 5
 
     - name: Terraform Plan
+      id: plan
       run: |
         cd terraform
-        terraform plan -out=tfplan
+        terraform plan -out=tfplan -detailed-exitcode
+      env:
+        TF_VAR_lambda_artifacts_bucket_name: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
+      timeout-minutes: 15
+      continue-on-error: true
+
+    - name: Check Plan Status
+      if: steps.plan.outcome == 'failure'
+      run: |
+        echo "Terraform plan failed or timed out. Please check the logs and configuration."
+        exit 1
 
     - name: Terraform Apply
+      if: steps.plan.outputs.exitcode == 2
       run: |
         cd terraform
-        terraform apply tfplan
+        terraform apply -auto-approve tfplan
+      timeout-minutes: 30
+
+    - name: Check Apply Status
+      if: steps.plan.outputs.exitcode == 2
+      run: |
+        if [ ${{ job.status }} == 'failure' ]; then
+          echo "Terraform apply failed or timed out. Please check the logs and infrastructure state."
+          exit 1
+        fi
