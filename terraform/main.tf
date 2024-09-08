@@ -1,3 +1,4 @@
+# Variables
 variable "repo_name" {
   type        = string
   description = "Name of the repository"
@@ -8,6 +9,35 @@ variable "lambda_artifacts_bucket_name" {
   description = "Name of the S3 bucket containing Lambda artifacts"
 }
 
+# IAM Role for Lambda functions
+resource "aws_iam_role" "lambda_role" {
+  name = "lambda_execution_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(local.default_tags, {
+    Name = "LambdaExecutionRole"
+  })
+}
+
+# IAM Policy attachment for Lambda VPC access
+resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+# Lambda function: Partition Processor
 resource "aws_lambda_function" "partition_processor" {
   function_name = "partitionProcessorLambda"
   s3_bucket     = var.lambda_artifacts_bucket_name
@@ -26,8 +56,13 @@ resource "aws_lambda_function" "partition_processor" {
       # Add any environment variables needed for the function
     }
   }
+
+  tags = merge(local.default_tags, {
+    Name = "PartitionProcessorLambda"
+  })
 }
 
+# Lambda function: Batch Processor
 resource "aws_lambda_function" "batch_processor" {
   function_name = "batchProcessorLambda"
   s3_bucket     = var.lambda_artifacts_bucket_name
@@ -46,9 +81,13 @@ resource "aws_lambda_function" "batch_processor" {
       # Add any environment variables needed for the function
     }
   }
+
+  tags = merge(local.default_tags, {
+    Name = "BatchProcessorLambda"
+  })
 }
 
-# Create a specific security group for Lambda functions
+# Security group for Lambda functions
 resource "aws_security_group" "lambda_sg" {
   name        = "lambda-security-group"
   description = "Security group for Lambda functions"
@@ -62,10 +101,8 @@ resource "aws_security_group" "lambda_sg" {
   }
 
   # Add any necessary ingress rules here
-}
 
-# Update the IAM role to allow Lambda to access VPC resources
-resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
-  role       = aws_iam_role.lambda_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+  tags = merge(local.default_tags, {
+    Name = "LambdaSecurityGroup"
+  })
 }
