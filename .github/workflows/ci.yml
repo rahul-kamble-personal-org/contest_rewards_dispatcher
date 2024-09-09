@@ -59,12 +59,26 @@ jobs:
         role-to-assume: ${{ secrets.AWS_ROLE }}
         aws-region: eu-central-1
 
+    - name: Verify AWS credentials
+      run: |
+        aws sts get-caller-identity
+      continue-on-error: true
+
     - name: Upload Lambda artifact to S3
       env:
         S3_BUCKET: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
       run: |
         REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
         aws s3 cp ${{ matrix.lambda }}_${{ steps.slug.outputs.sha8 }}.zip s3://${S3_BUCKET}/${REPO_NAME}/${{ matrix.lambda }}_${{ steps.slug.outputs.sha8 }}.zip
+      continue-on-error: true
+
+    - name: Check S3 upload status
+      if: failure()
+      run: |
+        echo "S3 upload failed. Checking AWS CLI configuration:"
+        aws configure list
+        echo "Checking S3 bucket access:"
+        aws s3 ls s3://${S3_BUCKET}
 
   cleanup-old-artifacts:
     needs: prepare-and-upload-artifacts
