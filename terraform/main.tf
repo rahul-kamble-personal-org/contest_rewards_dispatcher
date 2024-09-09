@@ -130,11 +130,11 @@ resource "aws_lambda_function" "partition_processor" {
 }
 
 # Provisioned Concurrency for Partition Processor
-resource "aws_lambda_provisioned_concurrency_config" "partition_processor_concurrency" {
-  function_name                     = aws_lambda_function.partition_processor.function_name
-  provisioned_concurrent_executions = var.partition_processor_concurrency
-  qualifier                         = aws_lambda_function.partition_processor.version
-}
+# resource "aws_lambda_provisioned_concurrency_config" "partition_processor_concurrency" {
+#   function_name                     = aws_lambda_function.partition_processor.function_name
+#   provisioned_concurrent_executions = var.partition_processor_concurrency
+#   qualifier                         = aws_lambda_function.partition_processor.version
+# }
 
 # Lambda function: Batch Processor
 resource "aws_lambda_function" "batch_processor" {
