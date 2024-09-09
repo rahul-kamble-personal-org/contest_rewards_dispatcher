@@ -40,6 +40,27 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
+# IAM Policy for Lambda to invoke other Lambda functions
+resource "aws_iam_role_policy" "lambda_invoke_policy" {
+  name = "lambda_invoke_policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = [
+          aws_lambda_function.batch_processor.arn
+        ]
+      }
+    ]
+  })
+}
+
 # Lambda function: Partition Processor
 resource "aws_lambda_function" "partition_processor" {
   function_name = "partitionProcessorLambda"
@@ -54,7 +75,7 @@ resource "aws_lambda_function" "partition_processor" {
   }
   environment {
     variables = {
-      # Add any environment variables needed for the function
+      BATCH_PROCESSOR_FUNCTION_NAME = aws_lambda_function.batch_processor.function_name
     }
   }
   tags = merge(local.default_tags, {
@@ -74,11 +95,6 @@ resource "aws_lambda_function" "batch_processor" {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
-  environment {
-    variables = {
-      # Add any environment variables needed for the function
-    }
-  }
   tags = merge(local.default_tags, {
     Name = "BatchProcessorLambda"
   })
@@ -95,58 +111,59 @@ resource "aws_security_group" "lambda_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  # Add any necessary ingress rules here
   tags = merge(local.default_tags, {
     Name = "LambdaSecurityGroup"
   })
 }
 
 # Step Functions State Machine
+# Step Functions State Machine
 resource "aws_sfn_state_machine" "contest_processor" {
   name     = "ContestProcessor"
   role_arn = aws_iam_role.step_functions_role.arn
 
   definition = jsonencode({
-    Comment = "Process contest participants across partitions with memory-efficient batch processing"
-    StartAt = "InitializePartitions"
-    States = {
-      InitializePartitions = {
-        Type = "Pass"
-        Result = {
-          partitions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        }
-        Next = "ProcessPartitions"
-      }
-      ProcessPartitions = {
-        Type           = "Map"
-        ItemsPath      = "$.partitions"
-        MaxConcurrency = 10
-        Iterator = {
-          StartAt = "FetchAndProcessPartition"
-          States = {
-            FetchAndProcessPartition = {
-              Type     = "Task"
-              Resource = "arn:aws:states:::lambda:invoke"
-              Parameters = {
-                FunctionName = aws_lambda_function.partition_processor.arn
-                Payload = {
-                  "contestId.$"          = "$.contestId"
-                  "winningSelectionId.$" = "$.winningSelectionId"
-                  "partitionId.$"        = "$$.Map.Item.Value"
-                }
-              }
-              End = true
+    "Comment" : "Process contest participants across partitions with memory-efficient batch processing",
+    "StartAt" : "InitializePartitions",
+    "States" : {
+      "InitializePartitions" : {
+        "Type" : "Pass",
+        "Result" : {
+          "partitions" : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        },
+        "Next" : "ProcessPartitions"
+      },
+      "ProcessPartitions" : {
+        "Type" : "Map",
+        "ItemsPath" : "$.partitions",
+        "Parameters" : {
+          "contestId.$" : "$.contestId",
+          "winningSelectionId.$" : "$.winningSelectionId",
+          "partitionId.$" : "$$.Map.Item.Value"
+        },
+        "MaxConcurrency" : 10,
+        "Iterator" : {
+          "StartAt" : "FetchAndProcessPartition",
+          "States" : {
+            "FetchAndProcessPartition" : {
+              "Type" : "Task",
+              "Resource" : "arn:aws:states:::lambda:invoke",
+              "Parameters" : {
+                "FunctionName" : "arn:aws:lambda:REGION:ACCOUNT_ID:function:partitionProcessorLambda",
+                "Payload.$" : "$"
+              },
+              "End" : true
             }
           }
-        }
-        Next = "FinalizeProcessing"
-      }
-      FinalizeProcessing = {
-        Type = "Pass"
-        Result = {
-          status = "completed"
-        }
-        End = true
+        },
+        "Next" : "FinalizeProcessing"
+      },
+      "FinalizeProcessing" : {
+        "Type" : "Pass",
+        "Result" : {
+          "status" : "completed"
+        },
+        "End" : true
       }
     }
   })
