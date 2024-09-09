@@ -47,7 +47,7 @@ resource "aws_lambda_function" "partition_processor" {
   function_name = "partitionProcessorLambda"
   s3_bucket     = var.lambda_artifacts_bucket_name
   s3_key        = "${var.repo_name}/partitionProcessorLambda_${var.commit_sha}.zip"
-  handler       = "index.handler"
+  handler       = "dist/index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
 
@@ -72,7 +72,7 @@ resource "aws_lambda_function" "batch_processor" {
   function_name = "batchProcessorLambda"
   s3_bucket     = var.lambda_artifacts_bucket_name
   s3_key        = "${var.repo_name}/batchProcessorLambda_${var.commit_sha}.zip"
-  handler       = "index.handler"
+  handler       = "dist/index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
 
