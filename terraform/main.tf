@@ -9,16 +9,9 @@ variable "lambda_artifacts_bucket_name" {
   description = "Name of the S3 bucket containing Lambda artifacts"
 }
 
-# Data source to get S3 object metadata for partition processor
-data "aws_s3_object" "partition_processor_zip" {
-  bucket = var.lambda_artifacts_bucket_name
-  key    = "${var.repo_name}/partitionProcessorLambda.zip"
-}
-
-# Data source to get S3 object metadata for batch processor
-data "aws_s3_object" "batch_processor_zip" {
-  bucket = var.lambda_artifacts_bucket_name
-  key    = "${var.repo_name}/batchProcessorLambda.zip"
+variable "commit_sha" {
+  type        = string
+  description = "Short SHA of the Git commit"
 }
 
 # IAM Role for Lambda functions
@@ -53,13 +46,10 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
 resource "aws_lambda_function" "partition_processor" {
   function_name = "partitionProcessorLambda"
   s3_bucket     = var.lambda_artifacts_bucket_name
-  s3_key        = "${var.repo_name}/partitionProcessorLambda.zip"
+  s3_key        = "${var.repo_name}/partitionProcessorLambda_${var.commit_sha}.zip"
   handler       = "index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
-
-  # Use S3 object version for source_code_hash
-  source_code_hash = data.aws_s3_object.partition_processor_zip.version_id
 
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
@@ -81,13 +71,10 @@ resource "aws_lambda_function" "partition_processor" {
 resource "aws_lambda_function" "batch_processor" {
   function_name = "batchProcessorLambda"
   s3_bucket     = var.lambda_artifacts_bucket_name
-  s3_key        = "${var.repo_name}/batchProcessorLambda.zip"
+  s3_key        = "${var.repo_name}/batchProcessorLambda_${var.commit_sha}.zip"
   handler       = "index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
-
-  # Use S3 object version for source_code_hash
-  source_code_hash = data.aws_s3_object.batch_processor_zip.version_id
 
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
