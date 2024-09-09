@@ -14,6 +14,24 @@ variable "commit_sha" {
   description = "Short SHA of the Git commit"
 }
 
+variable "aws_region" {
+  type        = string
+  default     = "eu-central-1"
+  description = "AWS region for resources"
+}
+
+variable "partition_processor_concurrency" {
+  type        = number
+  default     = 10
+  description = "Provisioned concurrency for partition processor Lambda"
+}
+
+variable "batch_processor_concurrency" {
+  type        = number
+  default     = 100
+  description = "Reserved concurrency for batch processor Lambda"
+}
+
 # IAM Role for Lambda functions
 resource "aws_iam_role" "lambda_role" {
   name = "lambda_execution_role"
@@ -40,9 +58,9 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-# IAM Policy for Lambda to invoke other Lambda functions
-resource "aws_iam_role_policy" "lambda_invoke_policy" {
-  name = "lambda_invoke_policy"
+# IAM Policy for Lambda permissions
+resource "aws_iam_role_policy" "lambda_permissions" {
+  name = "lambda_permissions_policy"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
@@ -56,6 +74,23 @@ resource "aws_iam_role_policy" "lambda_invoke_policy" {
         Resource = [
           aws_lambda_function.batch_processor.arn
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:Query",
+          "dynamodb:BatchWriteItem"
+        ]
+        Resource = aws_dynamodb_table.contest_participants.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:log-group:/aws/lambda/*:*"
       }
     ]
   })
@@ -69,6 +104,8 @@ resource "aws_lambda_function" "partition_processor" {
   handler       = "dist/index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
+  timeout       = 300
+  memory_size   = 256
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
@@ -76,11 +113,19 @@ resource "aws_lambda_function" "partition_processor" {
   environment {
     variables = {
       BATCH_PROCESSOR_FUNCTION_NAME = aws_lambda_function.batch_processor.function_name
+      AWS_REGION                    = var.aws_region
     }
   }
   tags = merge(local.default_tags, {
     Name = "PartitionProcessorLambda"
   })
+}
+
+# Provisioned Concurrency for Partition Processor
+resource "aws_lambda_provisioned_concurrency_config" "partition_processor_concurrency" {
+  function_name                     = aws_lambda_function.partition_processor.function_name
+  provisioned_concurrent_executions = var.partition_processor_concurrency
+  qualifier                         = aws_lambda_function.partition_processor.version
 }
 
 # Lambda function: Batch Processor
@@ -91,6 +136,8 @@ resource "aws_lambda_function" "batch_processor" {
   handler       = "dist/index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
+  timeout       = 300
+  memory_size   = 256
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
@@ -98,6 +145,18 @@ resource "aws_lambda_function" "batch_processor" {
   tags = merge(local.default_tags, {
     Name = "BatchProcessorLambda"
   })
+}
+
+# Reserved Concurrency for Batch Processor
+resource "aws_lambda_function_event_invoke_config" "batch_processor_concurrency" {
+  function_name                = aws_lambda_function.batch_processor.function_name
+  maximum_event_age_in_seconds = 60
+  maximum_retry_attempts       = 0
+}
+
+resource "aws_lambda_function_event_invoke_config" "batch_processor_reserved_concurrency" {
+  function_name = aws_lambda_function.batch_processor.function_name
+  qualifier     = "$LATEST"
 }
 
 # Security group for Lambda functions
@@ -116,7 +175,6 @@ resource "aws_security_group" "lambda_sg" {
   })
 }
 
-# Step Functions State Machine
 # Step Functions State Machine
 resource "aws_sfn_state_machine" "contest_processor" {
   name     = "ContestProcessor"
