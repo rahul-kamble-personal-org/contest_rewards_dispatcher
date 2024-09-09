@@ -26,7 +26,7 @@ jobs:
 
     - name: Get short SHA
       id: slug
-      run: echo "::set-output name=sha8::$(echo ${GITHUB_SHA} | cut -c1-8)"
+      run: echo "sha8=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_OUTPUT
 
     - name: Build partitionProcessorLambda
       run: |
@@ -51,23 +51,24 @@ jobs:
         zip -r batchProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip batchProcessorLambda_${{ steps.slug.outputs.sha8 }}
 
     - name: Configure AWS credentials
-      if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
       uses: aws-actions/configure-aws-credentials@v2
       with:
         role-to-assume: ${{ secrets.AWS_ROLE }}
         aws-region: eu-central-1
 
-    - name: Clean up old Lambda artifacts and upload new ones
-      if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    - name: Upload Lambda artifacts and cleanup old versions
       env:
         S3_BUCKET: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
       run: |
         REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
         
-        # Function to delete old artifacts and upload new one
-        clean_and_upload() {
+        upload_and_cleanup() {
           local prefix=$1
           local new_file=$2
+          
+          # Upload new artifact
+          aws s3 cp dist/$new_file s3://${S3_BUCKET}/${REPO_NAME}/$new_file
+          echo "Uploaded new artifact: $new_file"
           
           # List and delete old artifacts
           aws s3 ls s3://${S3_BUCKET}/${REPO_NAME}/${prefix} | awk '{print $4}' | while read old_file; do
@@ -76,25 +77,17 @@ jobs:
               echo "Deleted old artifact: $old_file"
             fi
           done
-          
-          # Upload new artifact
-          aws s3 cp dist/$new_file s3://${S3_BUCKET}/${REPO_NAME}/$new_file
-          echo "Uploaded new artifact: $new_file"
         }
         
-        # Clean up and upload partitionProcessorLambda
-        clean_and_upload "partitionProcessorLambda" "partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip"
-        
-        # Clean up and upload batchProcessorLambda
-        clean_and_upload "batchProcessorLambda" "batchProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip"
+        upload_and_cleanup "partitionProcessorLambda" "partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip"
+        upload_and_cleanup "batchProcessorLambda" "batchProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip"
 
-  terraform-ci:
+  terraform-plan:
     needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     
     steps:
     - name: Checkout code
@@ -111,7 +104,7 @@ jobs:
 
     - name: Get short SHA
       id: slug
-      run: echo "::set-output name=sha8::$(echo ${GITHUB_SHA} | cut -c1-8)"
+      run: echo "sha8=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_OUTPUT
 
     - name: Set S3 key name and repo name
       run: |
