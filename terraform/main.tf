@@ -14,7 +14,6 @@ variable "commit_sha" {
   description = "Short SHA of the Git commit"
 }
 
-
 # IAM Role for Lambda functions
 resource "aws_iam_role" "lambda_role" {
   name = "lambda_execution_role"
