@@ -4,6 +4,13 @@ variable "repo_name" {
   description = "Name of the repository"
 }
 
+variable "apply_batch_processor_concurrency" {
+  type        = bool
+  default     = false
+  description = "Whether to apply reserved concurrency to the batch processor Lambda"
+}
+
+
 variable "lambda_artifacts_bucket_name" {
   type        = string
   description = "Name of the S3 bucket containing Lambda artifacts"
@@ -139,7 +146,7 @@ resource "aws_lambda_function" "batch_processor" {
   role                           = aws_iam_role.lambda_role.arn
   timeout                        = 300
   memory_size                    = 256
-  reserved_concurrent_executions = var.batch_processor_concurrency
+  reserved_concurrent_executions = var.apply_batch_processor_concurrency ? var.batch_processor_concurrency : null
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
