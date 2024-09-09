@@ -81,7 +81,7 @@ resource "aws_iam_role_policy" "lambda_permissions" {
           "dynamodb:Query",
           "dynamodb:BatchWriteItem"
         ]
-        Resource = aws_dynamodb_table.contest_participants.arn
+        Resource = "*"
       },
       {
         Effect = "Allow"
