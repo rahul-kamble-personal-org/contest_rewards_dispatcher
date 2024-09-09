@@ -9,46 +9,49 @@ on:
       - '*'
 
 jobs:
-  build-and-test:
+  prepare-and-upload-artifacts:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    
+    strategy:
+      matrix:
+        lambda: [partitionProcessorLambda, batchProcessorLambda]
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
 
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v2
       with:
         node-version: '18'
+        registry-url: https://npm.daznplatform.com/
+        scope: '@dazn'
+
+    - name: Cache node modules
+      uses: actions/cache@v2
+      with:
+        path: "**/node_modules"
+        key: npm-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          npm-
+
+    - name: Install dependencies
+      run: |
+        cd src/${{ matrix.lambda }}
+        npm ci --quiet --no-progress
+
+    - name: Build TypeScript
+      run: |
+        cd src/${{ matrix.lambda }}
+        npx tsc
 
     - name: Get short SHA
       id: slug
       run: echo "sha8=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_OUTPUT
 
-    - name: Build partitionProcessorLambda
+    - name: Compress files
       run: |
-        cd src/partitionProcessorLambda
-        npm ci
-        npm run build
-        mkdir -p ../../dist/partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}
-        cp -r node_modules dist/* ../../dist/partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}/
-
-    - name: Build batchProcessorLambda
-      run: |
-        cd src/batchProcessorLambda
-        npm ci
-        npm run build
-        mkdir -p ../../dist/batchProcessorLambda_${{ steps.slug.outputs.sha8 }}
-        cp -r node_modules dist/* ../../dist/batchProcessorLambda_${{ steps.slug.outputs.sha8 }}/
-
-    - name: Package Lambda functions
-      run: |
-        cd dist
-        zip -r partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}
-        zip -r batchProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip batchProcessorLambda_${{ steps.slug.outputs.sha8 }}
+        cd src/${{ matrix.lambda }}
+        zip -r ${{ matrix.lambda }}_${{ steps.slug.outputs.sha8 }}.zip .
+        mv ${{ matrix.lambda }}_${{ steps.slug.outputs.sha8 }}.zip ../../
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
@@ -56,21 +59,37 @@ jobs:
         role-to-assume: ${{ secrets.AWS_ROLE }}
         aws-region: eu-central-1
 
-    - name: Upload Lambda artifacts and cleanup old versions
+    - name: Upload Lambda artifact to S3
+      env:
+        S3_BUCKET: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
+      run: |
+        REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
+        aws s3 cp ${{ matrix.lambda }}_${{ steps.slug.outputs.sha8 }}.zip s3://${S3_BUCKET}/${REPO_NAME}/${{ matrix.lambda }}_${{ steps.slug.outputs.sha8 }}.zip
+
+  cleanup-old-artifacts:
+    needs: prepare-and-upload-artifacts
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE }}
+        aws-region: eu-central-1
+
+    - name: Get short SHA
+      id: slug
+      run: echo "sha8=$(echo ${GITHUB_SHA} | cut -c1-8)" >> $GITHUB_OUTPUT
+
+    - name: Cleanup old Lambda versions
       env:
         S3_BUCKET: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
       run: |
         REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
         
-        upload_and_cleanup() {
+        cleanup_old_versions() {
           local prefix=$1
           local new_file=$2
           
-          # Upload new artifact
-          aws s3 cp dist/$new_file s3://${S3_BUCKET}/${REPO_NAME}/$new_file
-          echo "Uploaded new artifact: $new_file"
-          
-          # List and delete old artifacts
           aws s3 ls s3://${S3_BUCKET}/${REPO_NAME}/${prefix} | awk '{print $4}' | while read old_file; do
             if [[ $old_file != $new_file ]]; then
               aws s3 rm s3://${S3_BUCKET}/${REPO_NAME}/$old_file
@@ -79,11 +98,11 @@ jobs:
           done
         }
         
-        upload_and_cleanup "partitionProcessorLambda" "partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip"
-        upload_and_cleanup "batchProcessorLambda" "batchProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip"
+        cleanup_old_versions "partitionProcessorLambda" "partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip"
+        cleanup_old_versions "batchProcessorLambda" "batchProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip"
 
   terraform-plan:
-    needs: build-and-test
+    needs: prepare-and-upload-artifacts
     runs-on: ubuntu-latest
     permissions:
       id-token: write
