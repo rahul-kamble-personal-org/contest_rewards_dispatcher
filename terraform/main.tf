@@ -9,6 +9,18 @@ variable "lambda_artifacts_bucket_name" {
   description = "Name of the S3 bucket containing Lambda artifacts"
 }
 
+# Data source to get S3 object metadata for partition processor
+data "aws_s3_object" "partition_processor_zip" {
+  bucket = var.lambda_artifacts_bucket_name
+  key    = "${var.repo_name}/partitionProcessorLambda.zip"
+}
+
+# Data source to get S3 object metadata for batch processor
+data "aws_s3_object" "batch_processor_zip" {
+  bucket = var.lambda_artifacts_bucket_name
+  key    = "${var.repo_name}/batchProcessorLambda.zip"
+}
+
 # IAM Role for Lambda functions
 resource "aws_iam_role" "lambda_role" {
   name = "lambda_execution_role"
@@ -46,8 +58,8 @@ resource "aws_lambda_function" "partition_processor" {
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
 
-  # Add this line to force update when S3 object changes
-  source_code_hash = filebase64sha256("${var.lambda_artifacts_bucket_name}/${var.repo_name}/partitionProcessorLambda.zip")
+  # Use S3 object version for source_code_hash
+  source_code_hash = data.aws_s3_object.partition_processor_zip.version_id
 
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
@@ -74,8 +86,8 @@ resource "aws_lambda_function" "batch_processor" {
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
 
-  # Add this line to force update when S3 object changes
-  source_code_hash = filebase64sha256("${var.lambda_artifacts_bucket_name}/${var.repo_name}/batchProcessorLambda.zip")
+  # Use S3 object version for source_code_hash
+  source_code_hash = data.aws_s3_object.batch_processor_zip.version_id
 
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
