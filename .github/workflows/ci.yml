@@ -50,11 +50,16 @@ jobs:
         role-to-assume: ${{ secrets.AWS_ROLE }}
         aws-region: eu-central-1
 
-    - name: Upload Lambda artifacts
+    - name: Empty S3 folder and upload Lambda artifacts
       env:
         S3_BUCKET: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
       run: |
         REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
+        
+        # Empty the S3 folder
+        aws s3 rm s3://${S3_BUCKET}/${REPO_NAME}/ --recursive
+        
+        # Upload new artifacts
         aws s3 cp partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip s3://${S3_BUCKET}/${REPO_NAME}/partitionProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip
         aws s3 cp batchProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip s3://${S3_BUCKET}/${REPO_NAME}/batchProcessorLambda_${{ steps.slug.outputs.sha8 }}.zip
 
