@@ -106,6 +106,7 @@ resource "aws_lambda_function" "partition_processor" {
   role          = aws_iam_role.lambda_role.arn
   timeout       = 300
   memory_size   = 256
+  publish       = true # Required for provisioned concurrency
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
@@ -130,14 +131,15 @@ resource "aws_lambda_provisioned_concurrency_config" "partition_processor_concur
 
 # Lambda function: Batch Processor
 resource "aws_lambda_function" "batch_processor" {
-  function_name = "batchProcessorLambda"
-  s3_bucket     = var.lambda_artifacts_bucket_name
-  s3_key        = "${var.repo_name}/batchProcessorLambda_${var.commit_sha}.zip"
-  handler       = "dist/index.handler"
-  runtime       = "nodejs18.x"
-  role          = aws_iam_role.lambda_role.arn
-  timeout       = 300
-  memory_size   = 256
+  function_name                  = "batchProcessorLambda"
+  s3_bucket                      = var.lambda_artifacts_bucket_name
+  s3_key                         = "${var.repo_name}/batchProcessorLambda_${var.commit_sha}.zip"
+  handler                        = "dist/index.handler"
+  runtime                        = "nodejs18.x"
+  role                           = aws_iam_role.lambda_role.arn
+  timeout                        = 300
+  memory_size                    = 256
+  reserved_concurrent_executions = var.batch_processor_concurrency
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
@@ -145,18 +147,6 @@ resource "aws_lambda_function" "batch_processor" {
   tags = merge(local.default_tags, {
     Name = "BatchProcessorLambda"
   })
-}
-
-# Reserved Concurrency for Batch Processor
-resource "aws_lambda_function_event_invoke_config" "batch_processor_concurrency" {
-  function_name                = aws_lambda_function.batch_processor.function_name
-  maximum_event_age_in_seconds = 60
-  maximum_retry_attempts       = 0
-}
-
-resource "aws_lambda_function_event_invoke_config" "batch_processor_reserved_concurrency" {
-  function_name = aws_lambda_function.batch_processor.function_name
-  qualifier     = "$LATEST"
 }
 
 # Security group for Lambda functions
