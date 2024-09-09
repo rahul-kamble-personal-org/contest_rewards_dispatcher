@@ -17,7 +17,6 @@ variable "commit_sha" {
 # IAM Role for Lambda functions
 resource "aws_iam_role" "lambda_role" {
   name = "lambda_execution_role"
-
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -30,7 +29,6 @@ resource "aws_iam_role" "lambda_role" {
       }
     ]
   })
-
   tags = merge(local.default_tags, {
     Name = "LambdaExecutionRole"
   })
@@ -50,18 +48,15 @@ resource "aws_lambda_function" "partition_processor" {
   handler       = "dist/index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
-
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
-
   environment {
     variables = {
       # Add any environment variables needed for the function
     }
   }
-
   tags = merge(local.default_tags, {
     Name = "PartitionProcessorLambda"
   })
@@ -75,18 +70,15 @@ resource "aws_lambda_function" "batch_processor" {
   handler       = "dist/index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
-
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
-
   environment {
     variables = {
       # Add any environment variables needed for the function
     }
   }
-
   tags = merge(local.default_tags, {
     Name = "BatchProcessorLambda"
   })
@@ -97,17 +89,111 @@ resource "aws_security_group" "lambda_sg" {
   name        = "lambda-security-group"
   description = "Security group for Lambda functions"
   vpc_id      = data.aws_vpc.main.id
-
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
   # Add any necessary ingress rules here
-
   tags = merge(local.default_tags, {
     Name = "LambdaSecurityGroup"
+  })
+}
+
+# Step Functions State Machine
+resource "aws_sfn_state_machine" "contest_processor" {
+  name     = "ContestProcessor"
+  role_arn = aws_iam_role.step_functions_role.arn
+
+  definition = jsonencode({
+    Comment = "Process contest participants across partitions with memory-efficient batch processing"
+    StartAt = "InitializePartitions"
+    States = {
+      InitializePartitions = {
+        Type = "Pass"
+        Result = {
+          partitions = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        }
+        Next = "ProcessPartitions"
+      }
+      ProcessPartitions = {
+        Type           = "Map"
+        ItemsPath      = "$.partitions"
+        MaxConcurrency = 10
+        Iterator = {
+          StartAt = "FetchAndProcessPartition"
+          States = {
+            FetchAndProcessPartition = {
+              Type     = "Task"
+              Resource = "arn:aws:states:::lambda:invoke"
+              Parameters = {
+                FunctionName = aws_lambda_function.partition_processor.arn
+                Payload = {
+                  "contestId.$"          = "$.contestId"
+                  "winningSelectionId.$" = "$.winningSelectionId"
+                  "partitionId.$"        = "$$.Map.Item.Value"
+                }
+              }
+              End = true
+            }
+          }
+        }
+        Next = "FinalizeProcessing"
+      }
+      FinalizeProcessing = {
+        Type = "Pass"
+        Result = {
+          status = "completed"
+        }
+        End = true
+      }
+    }
+  })
+
+  tags = merge(local.default_tags, {
+    Name = "ContestProcessorStateMachine"
+  })
+}
+
+# IAM Role for Step Functions
+resource "aws_iam_role" "step_functions_role" {
+  name = "step_functions_execution_role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "states.amazonaws.com"
+        }
+      }
+    ]
+  })
+  tags = merge(local.default_tags, {
+    Name = "StepFunctionsExecutionRole"
+  })
+}
+
+# IAM Policy for Step Functions to invoke Lambda
+resource "aws_iam_role_policy" "step_functions_lambda_invoke" {
+  name = "step_functions_lambda_invoke_policy"
+  role = aws_iam_role.step_functions_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = [
+          aws_lambda_function.partition_processor.arn,
+          aws_lambda_function.batch_processor.arn
+        ]
+      }
+    ]
   })
 }
