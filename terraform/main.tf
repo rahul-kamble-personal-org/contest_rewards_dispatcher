@@ -123,47 +123,51 @@ resource "aws_sfn_state_machine" "contest_processor" {
   role_arn = aws_iam_role.step_functions_role.arn
 
   definition = jsonencode({
-    "Comment" : "Process contest participants across partitions with memory-efficient batch processing",
-    "StartAt" : "InitializePartitions",
-    "States" : {
-      "InitializePartitions" : {
-        "Type" : "Pass",
-        "Result" : {
-          "partitions" : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-        },
-        "Next" : "ProcessPartitions"
-      },
-      "ProcessPartitions" : {
-        "Type" : "Map",
-        "ItemsPath" : "$.partitions",
-        "Parameters" : {
-          "contestId.$" : "$.contestId",
-          "winningSelectionId.$" : "$.winningSelectionId",
+    "Comment" = "Process contest participants across partitions with memory-efficient batch processing"
+    "StartAt" = "InitializePartitions"
+    "States" = {
+      "InitializePartitions" = {
+        "Type" = "Pass"
+        "Result" = {
+          "partitions" = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        }
+        "ResultPath" = "$.partitions"
+        "Next"       = "ProcessPartitions"
+      }
+      "ProcessPartitions" = {
+        "Type"      = "Map"
+        "InputPath" = "$"
+        "ItemsPath" = "$.partitions"
+        "Parameters" = {
+          "contestId.$" : "$.contestId"
+          "winningSelectionId.$" : "$.winningSelectionId"
+          "metadata.$" : "$.metadata"
+          "processingConfig.$" : "$.processingConfig"
           "partitionId.$" : "$$.Map.Item.Value"
-        },
-        "MaxConcurrency" : 10,
-        "Iterator" : {
-          "StartAt" : "FetchAndProcessPartition",
-          "States" : {
-            "FetchAndProcessPartition" : {
-              "Type" : "Task",
-              "Resource" : "arn:aws:states:::lambda:invoke",
-              "Parameters" : {
-                "FunctionName" : "arn:aws:lambda:REGION:ACCOUNT_ID:function:partitionProcessorLambda",
-                "Payload.$" : "$"
-              },
-              "End" : true
+        }
+        "MaxConcurrency" = 10
+        "Iterator" = {
+          "StartAt" = "FetchAndProcessPartition"
+          "States" = {
+            "FetchAndProcessPartition" = {
+              "Type"     = "Task"
+              "Resource" = "arn:aws:states:::lambda:invoke"
+              "Parameters" = {
+                "FunctionName" = aws_lambda_function.partition_processor.arn
+                "Payload.$"    = "$"
+              }
+              "End" = true
             }
           }
-        },
-        "Next" : "FinalizeProcessing"
-      },
-      "FinalizeProcessing" : {
-        "Type" : "Pass",
-        "Result" : {
-          "status" : "completed"
-        },
-        "End" : true
+        }
+        "Next" = "FinalizeProcessing"
+      }
+      "FinalizeProcessing" = {
+        "Type" = "Pass"
+        "Result" = {
+          "status" = "completed"
+        }
+        "End" = true
       }
     }
   })
