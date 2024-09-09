@@ -46,6 +46,9 @@ resource "aws_lambda_function" "partition_processor" {
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
 
+  # Add this line to force update when S3 object changes
+  source_code_hash = filebase64sha256("${var.lambda_artifacts_bucket_name}/${var.repo_name}/partitionProcessorLambda.zip")
+
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids
     security_group_ids = [aws_security_group.lambda_sg.id]
@@ -70,6 +73,9 @@ resource "aws_lambda_function" "batch_processor" {
   handler       = "index.handler"
   runtime       = "nodejs18.x"
   role          = aws_iam_role.lambda_role.arn
+
+  # Add this line to force update when S3 object changes
+  source_code_hash = filebase64sha256("${var.lambda_artifacts_bucket_name}/${var.repo_name}/batchProcessorLambda.zip")
 
   vpc_config {
     subnet_ids         = data.aws_subnets.private.ids

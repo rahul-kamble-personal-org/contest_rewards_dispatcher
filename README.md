@@ -1,1 +1,1 @@
-# aws_first_personal_project
+# Sports betting reward dispatcher
