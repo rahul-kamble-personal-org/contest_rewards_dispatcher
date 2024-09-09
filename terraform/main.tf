@@ -21,7 +21,7 @@ variable "commit_sha" {
   description = "Short SHA of the Git commit"
 }
 
-variable "aws_region" {
+variable "aws_region_tf" {
   type        = string
   default     = "eu-central-1"
   description = "AWS region for resources"
@@ -97,7 +97,7 @@ resource "aws_iam_role_policy" "lambda_permissions" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "arn:aws:logs:${var.aws_region}:*:log-group:/aws/lambda/*:*"
+        Resource = "arn:aws:logs:${var.aws_region_tf}:*:log-group:/aws/lambda/*:*"
       }
     ]
   })
@@ -121,7 +121,7 @@ resource "aws_lambda_function" "partition_processor" {
   environment {
     variables = {
       BATCH_PROCESSOR_FUNCTION_NAME = aws_lambda_function.batch_processor.function_name
-      AWS_REGION                    = var.aws_region
+      AWS_REGION_TF                 = var.aws_region_tf
     }
   }
   tags = merge(local.default_tags, {
