@@ -34,14 +34,29 @@ export const handler = async (event: { contestId: string; winningSelectionId: st
       const batchRecords = allItems.slice(i, i + 20);
       
       logger.info('Invoking batch processor', { batchSize: batchRecords.length, batchNumber });
-      processingPromises.push(invokeBatchProcessor(batchRecords, contestId, winningSelectionId, partitionId, batchNumber));
+      processingPromises.push(invokeBatchProcessor(batchRecords, contestId, winningSelectionId, partitionId, batchNumber)
+        .catch(error => {
+          logger.error('Batch processing failed', { batchNumber, error: error.message });
+          return { status: 'failed', batchNumber, error: error.message };
+        }));
       batchNumber++;
     }
 
-    await Promise.all(processingPromises);
+    const results = await Promise.all(processingPromises);
     
-    logger.info('Partition processing completed', { batchesProcessed: batchNumber });
-    return { status: 'Partition processing completed', batchesProcessed: batchNumber };
+    const failedBatches = results.filter(result => result && result.status === 'failed');
+    
+    logger.info('Partition processing completed', { 
+      batchesProcessed: batchNumber,
+      failedBatches: failedBatches.length
+    });
+    
+    return { 
+      status: failedBatches.length > 0 ? 'Partial completion' : 'Complete',
+      batchesProcessed: batchNumber,
+      failedBatches: failedBatches.length,
+      failedBatchDetails: failedBatches
+    };
   } catch (error: any) {
     logger.error('Error processing partition', { error: error.message, stack: error.stack });
     throw error;
@@ -103,12 +118,32 @@ async function invokeBatchProcessor(batch: any, contestId: string, winningSelect
     })
   };
 
-  try {
-    logger.debug('Invoking batch processor Lambda', { params });
-    await lambda.send(new InvokeCommand(params));
-    logger.debug('Batch processor Lambda invoked successfully', { batchNumber });
-  } catch (error: any) {
-    logger.error('Error invoking batch processor Lambda', { error: error.message, params });
-    throw error;
+  const maxRetries = 3;
+  const retryDelay = 1000; // 1 second
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      logger.debug('Invoking batch processor Lambda', { params, attempt });
+      await lambda.send(new InvokeCommand(params));
+      logger.debug('Batch processor Lambda invoked successfully', { batchNumber, attempt });
+      return; // Success, exit the function
+    } catch (error: any) {
+      if (attempt === maxRetries) {
+        logger.error('Error invoking batch processor Lambda after max retries', { 
+          error: error.message, 
+          params, 
+          attempts: maxRetries 
+        });
+        throw error;
+      } else {
+        logger.warn('Error invoking batch processor Lambda, retrying', { 
+          error: error.message, 
+          params, 
+          attempt, 
+          nextAttemptIn: retryDelay 
+        });
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
   }
 }
