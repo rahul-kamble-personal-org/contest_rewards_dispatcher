@@ -1,4 +1,5 @@
-import winston from 'winston';
+import { Context } from 'aws-lambda';
+import * as winston from 'winston';
 
 // Configure Winston logger
 const logger = winston.createLogger({
@@ -13,60 +14,45 @@ const logger = winston.createLogger({
   ]
 });
 
-exports.handler = async (event: { batch: any; contestId: any; winningSelectionId: any; partitionId: any; batchNumber: any; }) => {
-  logger.info('Received batch processing event', { event });
-  const { batch, contestId, winningSelectionId, partitionId, batchNumber } = event;
-  
+// Define the event interface based on what the partition processor sends
+interface BatchProcessorEvent {
+  batch: any[];
+  contestId: string;
+  winningSelectionId: string;
+  partitionId: string;
+  batchNumber: number;
+}
+
+export const handler = async (event: BatchProcessorEvent, context: Context): Promise<void> => {
   try {
-    for (const record of batch) {
-      await processRecord(record);
-    }
+    // Log the entire event
+    logger.info('Received batch for processing', { event });
+
+    // Log specific details from the event
+    const { batch, contestId, winningSelectionId, partitionId, batchNumber } = event;
     
-    logger.info('Batch processing completed', { 
-      batchNumber, 
-      processedCount: batch.length, 
-      partitionId, 
-      contestId 
+    logger.info('Processing batch', {
+      batchSize: batch.length,
+      contestId,
+      winningSelectionId,
+      partitionId,
+      batchNumber
     });
 
-    return { 
-      processedCount: batch.length, 
-      batchNumber, 
-      partitionId 
-    };
+    // Here you would normally process the batch
+    // For now, we're just logging it
+
+    logger.info('Batch processing completed successfully');
+
+    // No need to return anything for an asynchronous Lambda invocation
   } catch (error: any) {
     logger.error('Error processing batch', { 
       error: error.message, 
       stack: error.stack,
-      batchNumber,
-      partitionId,
-      contestId
+      batchNumber: event.batchNumber 
     });
-    throw error;
+    
+    // Optionally, you could throw the error here if you want the Lambda to fail
+    // throw error;
   }
 };
-
-async function processRecord(record: { id: any; }) {
-  try {
-    logger.debug('Processing record', { record });
-    // Implement your record processing logic here
-    // Add your business logic for processing each record
-
-    // For demonstration purposes, let's log some info about the record
-    logger.info('Record processed successfully', {
-      recordId: record.id,  // Assuming each record has an id field
-      // Add other relevant fields from the record
-    });
-  } catch (error: any) {
-    logger.error('Error processing individual record', {
-      error: error.message,
-      record: record.id,  // Assuming each record has an id field
-      // Be careful not to log sensitive information
-    });
-    // Depending on your error handling strategy, you might want to:
-    // 1. Throw the error to stop processing the entire batch
-    // throw error;
-    // 2. Or, continue processing other records in the batch
-    // In this example, we'll continue processing other records
-  }
-}
