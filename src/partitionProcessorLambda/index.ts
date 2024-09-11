@@ -24,23 +24,20 @@ export const handler = async (event: { contestId: string; winningSelectionId: st
   const { contestId, winningSelectionId, partitionId } = event;
   
   let batchNumber = 0;
-  const processingPromises = [];
+  const processingPromises: any[] = [];
 
   try {
-    const allItems = await getWinnersFromPartition(contestId, winningSelectionId, partitionId);
-    
-    // Process items in batches of 20
-    for (let i = 0; i < allItems.length; i += 20) {
-      const batchRecords = allItems.slice(i, i + 20);
-      
-      logger.info('Invoking batch processor', { batchSize: batchRecords.length, batchNumber });
-      processingPromises.push(invokeBatchProcessor(batchRecords, contestId, winningSelectionId, partitionId, batchNumber)
-        .catch(error => {
-          logger.error('Batch processing failed', { batchNumber, error: error.message });
-          return { status: 'failed', batchNumber, error: error.message };
-        }));
+    await processPartitionInBatches(contestId, winningSelectionId, partitionId, (batch) => {
+      logger.info('Invoking batch processor', { batchSize: batch.length, batchNumber });
+      processingPromises.push(
+        invokeBatchProcessor(batch, contestId, winningSelectionId, partitionId, batchNumber)
+          .catch(error => {
+            logger.error('Batch processing failed', { batchNumber, error: error.message });
+            return { status: 'failed', batchNumber, error: error.message };
+          })
+      );
       batchNumber++;
-    }
+    });
 
     const results = await Promise.all(processingPromises);
     
@@ -63,9 +60,14 @@ export const handler = async (event: { contestId: string; winningSelectionId: st
   }
 };
 
-async function getWinnersFromPartition(contestId: string, winningSelectionId: string, partitionId: string) {
+async function processPartitionInBatches(
+  contestId: string, 
+  winningSelectionId: string, 
+  partitionId: string,
+  processBatch: (batch: any[]) => void
+) {
   let lastEvaluatedKey: Record<string, any> | undefined = undefined;
-  const allItems: any[] = [];
+  let accumulatedItems: any[] = [];
 
   do {
     const params: QueryCommandInput = {
@@ -79,35 +81,47 @@ async function getWinnersFromPartition(contestId: string, winningSelectionId: st
         ":pid": partitionId
       }),
       ExclusiveStartKey: lastEvaluatedKey,
-      Limit: 20
+      Limit: 40 // Fetch more items per query to reduce API calls
     };
 
     try {
       logger.debug('Querying DynamoDB', { params });
       const data = await dynamodb.send(new QueryCommand(params));
-      allItems.push(...(data.Items ?? []).map(item => unmarshall(item)));
+      const fetchedItems = (data.Items ?? []).map(item => unmarshall(item));
+      
+      for (const item of fetchedItems) {
+        accumulatedItems.push(item);
+        if (accumulatedItems.length === 80) {
+          processBatch([...accumulatedItems]);
+          accumulatedItems = [];
+        }
+      }
+
       lastEvaluatedKey = data.LastEvaluatedKey;
 
       logger.debug('DynamoDB query result', { 
-        itemCount: data.Items?.length ?? 0, 
-        totalItems: allItems.length, 
+        itemsFetched: fetchedItems.length, 
+        itemsAccumulated: accumulatedItems.length, 
         hasMoreResults: !!lastEvaluatedKey 
       });
 
       // Optional: Add a delay to avoid exceeding read capacity
-      await new Promise(resolve => setTimeout(resolve, 100));
+      //await new Promise(resolve => setTimeout(resolve, 100));
     } catch (error: any) {
       logger.error('Error querying DynamoDB', { error: error.message, params });
       throw error;
     }
   } while (lastEvaluatedKey);
 
-  return allItems;
+  // Process any remaining items
+  if (accumulatedItems.length > 0) {
+    processBatch(accumulatedItems);
+  }
 }
 
 async function invokeBatchProcessor(batch: any, contestId: string, winningSelectionId: string, partitionId: string, batchNumber: number) {
   const params: InvokeCommandInput = {
-    FunctionName: 'batchProcessorLambda',
+    FunctionName: process.env.BATCH_PROCESSOR_FUNCTION_NAME || 'batchProcessorLambda',
     InvocationType: 'Event',
     Payload: JSON.stringify({ 
       batch, 
