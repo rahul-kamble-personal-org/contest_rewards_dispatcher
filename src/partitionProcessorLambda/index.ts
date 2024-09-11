@@ -1,10 +1,10 @@
-const AWS = require('aws-sdk');
-const { DynamoDBClient, QueryCommand } = require("@aws-sdk/client-dynamodb");
-const { marshall, unmarshall } = require("@aws-sdk/util-dynamodb");
-const winston = require('winston');
+import { DynamoDBClient, QueryCommand, QueryCommandInput } from "@aws-sdk/client-dynamodb";
+import { LambdaClient, InvokeCommand, InvokeCommandInput } from "@aws-sdk/client-lambda";
+import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+import * as winston from 'winston';
 
 const dynamodb = new DynamoDBClient({ region: "eu-central-1" });
-const lambda = new AWS.Lambda();
+const lambda = new LambdaClient({ region: "eu-central-1" });
 
 // Configure Winston logger
 const logger = winston.createLogger({
@@ -19,25 +19,24 @@ const logger = winston.createLogger({
   ]
 });
 
-exports.handler = async (event: { contestId: any; winningSelectionId: any; partitionId: any; }) => {
+export const handler = async (event: { contestId: string; winningSelectionId: string; partitionId: string; }) => {
   logger.info('Received event', { event });
   const { contestId, winningSelectionId, partitionId } = event;
   
-  let lastEvaluatedKey = null;
   let batchNumber = 0;
   const processingPromises = [];
 
   try {
-    do {
-      logger.debug('Fetching partition batch', { contestId, winningSelectionId, partitionId, batchNumber });
-      const { Items, LastEvaluatedKey } = await fetchPartitionBatch(contestId, winningSelectionId, partitionId, lastEvaluatedKey);
-      lastEvaluatedKey = LastEvaluatedKey;
-      const batchRecords = Items.map((item: any) => unmarshall(item));
+    const allItems = await getWinnersFromPartition(contestId, winningSelectionId, partitionId);
+    
+    // Process items in batches of 20
+    for (let i = 0; i < allItems.length; i += 20) {
+      const batchRecords = allItems.slice(i, i + 20);
       
       logger.info('Invoking batch processor', { batchSize: batchRecords.length, batchNumber });
       processingPromises.push(invokeBatchProcessor(batchRecords, contestId, winningSelectionId, partitionId, batchNumber));
       batchNumber++;
-    } while (lastEvaluatedKey);
+    }
 
     await Promise.all(processingPromises);
     
@@ -49,33 +48,50 @@ exports.handler = async (event: { contestId: any; winningSelectionId: any; parti
   }
 };
 
-async function fetchPartitionBatch(contestId: any, winningSelectionId: any, partitionId: any, exclusiveStartKey: any) {
-  const params = {
-    TableName: "ContestParticipants",
-    KeyConditionExpression: "contestId = :cid AND partitionId = :pid",
-    FilterExpression: "selectionId = :sid",
-    ExpressionAttributeValues: marshall({
-      ":cid": contestId,
-      ":pid": partitionId,
-      ":sid": winningSelectionId
-    }),
-    ExclusiveStartKey: exclusiveStartKey,
-    Limit: 20 // Fetch in batches of 20
-  };
+async function getWinnersFromPartition(contestId: string, winningSelectionId: string, partitionId: string) {
+  let lastEvaluatedKey: Record<string, any> | undefined = undefined;
+  const allItems: any[] = [];
 
-  try {
-    logger.debug('Querying DynamoDB', { params });
-    const result = await dynamodb.send(new QueryCommand(params));
-    logger.debug('DynamoDB query result', { itemCount: result.Items.length, hasMoreResults: !!result.LastEvaluatedKey });
-    return result;
-  } catch (error : any) {
-    logger.error('Error querying DynamoDB', { error: error.message, params });
-    throw error;
-  }
+  do {
+    const params: QueryCommandInput = {
+      TableName: "ContestParticipants",
+      IndexName: "SelectionPartitionIndex",
+      KeyConditionExpression: "contestId = :cid AND selectionId = :sid",
+      FilterExpression: "partitionId = :pid",
+      ExpressionAttributeValues: marshall({
+        ":cid": contestId,
+        ":sid": winningSelectionId,
+        ":pid": partitionId
+      }),
+      ExclusiveStartKey: lastEvaluatedKey,
+      Limit: 20
+    };
+
+    try {
+      logger.debug('Querying DynamoDB', { params });
+      const data = await dynamodb.send(new QueryCommand(params));
+      allItems.push(...(data.Items ?? []).map(item => unmarshall(item)));
+      lastEvaluatedKey = data.LastEvaluatedKey;
+
+      logger.debug('DynamoDB query result', { 
+        itemCount: data.Items?.length ?? 0, 
+        totalItems: allItems.length, 
+        hasMoreResults: !!lastEvaluatedKey 
+      });
+
+      // Optional: Add a delay to avoid exceeding read capacity
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error: any) {
+      logger.error('Error querying DynamoDB', { error: error.message, params });
+      throw error;
+    }
+  } while (lastEvaluatedKey);
+
+  return allItems;
 }
 
-async function invokeBatchProcessor(batch: any, contestId: any, winningSelectionId: any, partitionId: any, batchNumber: number) {
-  const params = {
+async function invokeBatchProcessor(batch: any, contestId: string, winningSelectionId: string, partitionId: string, batchNumber: number) {
+  const params: InvokeCommandInput = {
     FunctionName: 'batchProcessorLambda',
     InvocationType: 'Event',
     Payload: JSON.stringify({ 
@@ -89,7 +105,7 @@ async function invokeBatchProcessor(batch: any, contestId: any, winningSelection
 
   try {
     logger.debug('Invoking batch processor Lambda', { params });
-    await lambda.invoke(params).promise();
+    await lambda.send(new InvokeCommand(params));
     logger.debug('Batch processor Lambda invoked successfully', { batchNumber });
   } catch (error: any) {
     logger.error('Error invoking batch processor Lambda', { error: error.message, params });
