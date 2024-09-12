@@ -155,60 +155,60 @@ resource "aws_sfn_state_machine" "contest_processor" {
   role_arn = aws_iam_role.step_functions_role.arn
 
   definition = jsonencode({
-  "Comment": "Process contest participants for partitions 0 and 1",
-  "StartAt": "InitializePartitions",
-  "States": {
-    "FinalizeProcessing": {
-      "End": true,
-      "Result": {
-        "status": "completed"
+    "Comment" : "Process contest participants for partitions 0 and 1",
+    "StartAt" : "InitializePartitions",
+    "States" : {
+      "FinalizeProcessing" : {
+        "End" : true,
+        "Result" : {
+          "status" : "completed"
+        },
+        "Type" : "Pass"
       },
-      "Type": "Pass"
-    },
-    "InitializePartitions": {
-      "Next": "ProcessPartitions",
-      "Result": {
-        "partitions": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8,
-          9
-        ]
+      "InitializePartitions" : {
+        "Next" : "ProcessPartitions",
+        "Result" : {
+          "partitions" : [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ]
+        },
+        "Type" : "Pass"
       },
-      "Type": "Pass"
-    },
-    "ProcessPartitions": {
-      "ItemsPath": "$.partitions",
-      "Iterator": {
-        "StartAt": "InvokeLambda",
-        "States": {
-          "InvokeLambda": {
-            "End": true,
-            "Parameters": {
-              "FunctionName": "arn:aws:lambda:eu-central-1:418272774889:function:partitionProcessorLambda",
-              "Payload": {
-                "contestId.$": "$$.Execution.Input.contestId",
-                "partitionId.$": "$",
-                "winningSelectionId.$": "$$.Execution.Input.winningSelectionId"
-              }
-            },
-            "Resource": "arn:aws:states:::lambda:invoke",
-            "Type": "Task"
+      "ProcessPartitions" : {
+        "ItemsPath" : "$.partitions",
+        "Iterator" : {
+          "StartAt" : "InvokeLambda",
+          "States" : {
+            "InvokeLambda" : {
+              "End" : true,
+              "Parameters" : {
+                "FunctionName" : "arn:aws:lambda:eu-central-1:418272774889:function:partitionProcessorLambda",
+                "Payload" : {
+                  "contestId.$" : "$$.Execution.Input.contestId",
+                  "partitionId.$" : "$",
+                  "winningSelectionId.$" : "$$.Execution.Input.winningSelectionId"
+                }
+              },
+              "Resource" : "arn:aws:states:::lambda:invoke",
+              "Type" : "Task"
+            }
           }
-        }
-      },
-      "MaxConcurrency": 2,
-      "Next": "FinalizeProcessing",
-      "Type": "Map"
+        },
+        "MaxConcurrency" : 2,
+        "Next" : "FinalizeProcessing",
+        "Type" : "Map"
+      }
     }
-  }
-})
+  })
 
   tags = merge(local.default_tags, {
     Name = "ContestProcessorStateMachine"
