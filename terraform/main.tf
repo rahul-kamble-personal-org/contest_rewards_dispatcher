@@ -1,43 +1,43 @@
-# # Variables
-# variable "repo_name" {
-#   type        = string
-#   description = "Name of the repository"
-# }
+# Variables
+variable "repo_name" {
+  type        = string
+  description = "Name of the repository"
+}
 
-# variable "apply_batch_processor_concurrency" {
-#   type        = bool
-#   default     = false
-#   description = "Whether to apply reserved concurrency to the batch processor Lambda"
-# }
+variable "apply_batch_processor_concurrency" {
+  type        = bool
+  default     = false
+  description = "Whether to apply reserved concurrency to the batch processor Lambda"
+}
 
 
-# variable "lambda_artifacts_bucket_name" {
-#   type        = string
-#   description = "Name of the S3 bucket containing Lambda artifacts"
-# }
+variable "lambda_artifacts_bucket_name" {
+  type        = string
+  description = "Name of the S3 bucket containing Lambda artifacts"
+}
 
-# variable "commit_sha" {
-#   type        = string
-#   description = "Short SHA of the Git commit"
-# }
+variable "commit_sha" {
+  type        = string
+  description = "Short SHA of the Git commit"
+}
 
-# variable "aws_region_tf" {
-#   type        = string
-#   default     = "eu-central-1"
-#   description = "AWS region for resources"
-# }
+variable "aws_region_tf" {
+  type        = string
+  default     = "eu-central-1"
+  description = "AWS region for resources"
+}
 
-# variable "partition_processor_concurrency" {
-#   type        = number
-#   default     = 10
-#   description = "Provisioned concurrency for partition processor Lambda"
-# }
+variable "partition_processor_concurrency" {
+  type        = number
+  default     = 10
+  description = "Provisioned concurrency for partition processor Lambda"
+}
 
-# variable "batch_processor_concurrency" {
-#   type        = number
-#   default     = 100
-#   description = "Reserved concurrency for batch processor Lambda"
-# }
+variable "batch_processor_concurrency" {
+  type        = number
+  default     = 100
+  description = "Reserved concurrency for batch processor Lambda"
+}
 
 # # IAM Role for Lambda functions
 # resource "aws_iam_role" "lambda_role" {
