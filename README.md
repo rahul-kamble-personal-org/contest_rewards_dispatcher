@@ -1,1 +1,1 @@
-# Sports betting reward dispatcher
+# contest_rewards_dispatcher
