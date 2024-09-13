@@ -2,6 +2,15 @@ name: Continuous Deployment
 
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Operation to perform (create or destroy)'
+        required: true
+        default: 'create'
+        type: choice
+        options:
+        - create
+        - destroy
 
 env:
   TF_CLI_ARGS: "-no-color"
@@ -51,22 +60,49 @@ jobs:
           -backend-config="dynamodb_table=terraform-state-lock"
       timeout-minutes: 5
 
-    - name: Terraform Apply
+    - name: Terraform Plan
       env:
         TF_VAR_lambda_artifacts_bucket_name: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
         TF_VAR_repo_name: ${{ env.REPO_NAME }}
         TF_VAR_commit_sha: ${{ steps.slug.outputs.sha8 }}
       run: |
         cd terraform
-        terraform apply -auto-approve \
+        terraform plan \
           -var="repo_name=${REPO_NAME}" \
           -var="commit_sha=${{ steps.slug.outputs.sha8 }}" \
+          -var="operation=${{ github.event.inputs.operation }}" \
+          -out=tfplan \
           -lock=true \
           -lock-timeout=300s
+      timeout-minutes: 10
+
+    - name: Terraform Apply
+      if: github.event.inputs.operation == 'create'
+      env:
+        TF_VAR_lambda_artifacts_bucket_name: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
+        TF_VAR_repo_name: ${{ env.REPO_NAME }}
+        TF_VAR_commit_sha: ${{ steps.slug.outputs.sha8 }}
+      run: |
+        cd terraform
+        terraform apply -auto-approve tfplan
       timeout-minutes: 30
 
-    - name: Check Apply Status
+    - name: Terraform Destroy
+      if: github.event.inputs.operation == 'destroy'
+      env:
+        TF_VAR_lambda_artifacts_bucket_name: ${{ vars.AWS_LAMBDA_ARTIFACTS_S3_BUCKET }}
+        TF_VAR_repo_name: ${{ env.REPO_NAME }}
+        TF_VAR_commit_sha: ${{ steps.slug.outputs.sha8 }}
+      run: |
+        cd terraform
+        terraform destroy -auto-approve \
+          -var="repo_name=${REPO_NAME}" \
+          -var="commit_sha=${{ steps.slug.outputs.sha8 }}" \
+          -var="operation=destroy"
+      timeout-minutes: 30
+
+    - name: Check Apply/Destroy Status
       if: failure()
       run: |
-        echo "Terraform apply failed or timed out. Please check the logs and infrastructure state."
+        echo "Terraform ${{ github.event.inputs.operation }} failed or timed out. Please check the logs and infrastructure state."
         exit 1
