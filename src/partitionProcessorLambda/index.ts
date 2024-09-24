@@ -4,8 +4,11 @@ import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import * as winston from 'winston';
 
 const dynamodb = new DynamoDBClient({ region: "eu-central-1" });
-const lambda = new LambdaClient({ region: "eu-central-1" });
-
+const lambda = new LambdaClient({ 
+  region: "eu-central-1",
+  maxAttempts: 5,
+  retryMode: "adaptive"
+});
 // Configure Winston logger
 const logger = winston.createLogger({
   level: 'info',
@@ -129,8 +132,7 @@ async function processPartitionInBatches(
   }
 }
 
-async function invokeBatchProcessor(batch: any, contestId: string, winningSelectionId: string, partitionId: string, batchNumber: number) {
-  console.log('thisisit1')
+async function invokeBatchProcessor(batch: any[], contestId: string, winningSelectionId: string, partitionId: string, batchNumber: number) {
   const params: InvokeCommandInput = {
     FunctionName: process.env.BATCH_PROCESSOR_FUNCTION_NAME || 'batchProcessorLambda',
     InvocationType: 'Event',
@@ -142,22 +144,64 @@ async function invokeBatchProcessor(batch: any, contestId: string, winningSelect
       batchNumber
     })
   };
-  console.log('thisisit2',params)
 
-  const maxRetries = 3;
-  const retryDelay = 1000; // 1 second
+  logger.info('Preparing to invoke batch processor Lambda', { 
+    batchNumber, 
+    batchSize: batch.length, 
+    functionName: params.FunctionName 
+  });
+
+  const maxRetries = 5;
+  const baseDelay = 1000; // 1 second
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      logger.debug('Invoking batch processor Lambda', { params, attempt });
-      await lambda.send(new InvokeCommand(params));
-      logger.debug('Batch processor Lambda invoked successfully', { batchNumber, attempt });
+      logger.debug('Invoking batch processor Lambda', { 
+        params: {
+          ...params,
+          Payload: `${batch.length} items` // Avoid logging full payload
+        }, 
+        attempt 
+      });
+
+      const startTime = Date.now();
+      const command = new InvokeCommand(params);
+      const response: any = await lambda.send(command);
+      const duration = Date.now() - startTime;
+
+      logger.info('Batch processor Lambda invoked successfully', { 
+        batchNumber, 
+        attempt,
+        duration,
+        statusCode: response.StatusCode,
+        executedVersion: response.ExecutedVersion,
+        logResult: response.LogResult ? 'Available' : 'Not available'
+      });
+
+      // If you want to check the response payload (be cautious with async invocations)
+      if (response.Payload) {
+        const payloadString = new TextDecoder().decode(response.Payload);
+        logger.debug('Lambda response payload', { payloadString });
+      }
+
       return; // Success, exit the function
     } catch (error: any) {
+      const retryDelay = baseDelay * Math.pow(2, attempt - 1);
+      
+      logger.warn('Error invoking batch processor Lambda', { 
+        error: error.message,
+        errorCode: error.$metadata?.httpStatusCode,
+        errorType: error.name,
+        serviceError: error.$metadata?.serviceException,
+        batchNumber,
+        attempt,
+        nextAttemptIn: attempt < maxRetries ? retryDelay : 'No more retries'
+      });
+
       if (attempt === maxRetries) {
-        logger.error('Error invoking batch processor Lambda after max retries', { 
+        logger.error('Failed to invoke batch processor Lambda after max retries', { 
           error: error.message, 
-          params, 
+          batchNumber,
           attempts: maxRetries 
         });
         throw error;
