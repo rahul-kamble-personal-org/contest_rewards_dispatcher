@@ -70,24 +70,34 @@ async function processPartitionInBatches(
   let accumulatedItems: any[] = [];
 
   do {
+    // const params: QueryCommandInput = {
+    //   TableName: "ContestParticipants",
+    //   IndexName: "SelectionPartitionIndex",
+    //   KeyConditionExpression: "contestId = :cid AND selectionId = :sid",
+    //   FilterExpression: "partitionId = :pid",
+    //   ExpressionAttributeValues: marshall({
+    //     ":cid": contestId,
+    //     ":sid": winningSelectionId,
+    //     ":pid": partitionId
+    //   }),
+    //   ExclusiveStartKey: lastEvaluatedKey,
+    //   Limit: 40 // Fetch more items per query to reduce API calls
+    // };
+
     const params: QueryCommandInput = {
-      TableName: "ContestParticipants",
+      TableName: "ContestParticipants2",
       IndexName: "SelectionPartitionIndex",
-      KeyConditionExpression: "contestId = :cid AND selectionId = :sid",
-      FilterExpression: "partitionId = :pid",
+      KeyConditionExpression: "contestId = :cid AND selectionPartitionId = :spid",
       ExpressionAttributeValues: marshall({
         ":cid": contestId,
-        ":sid": winningSelectionId,
-        ":pid": partitionId
-      }),
-      ExclusiveStartKey: lastEvaluatedKey,
-      Limit: 40 // Fetch more items per query to reduce API calls
+        ":spid":  `${winningSelectionId}#${partitionId}`
+      })
     };
 
     try {
       logger.debug('Querying DynamoDB', { params });
       const data = await dynamodb.send(new QueryCommand(params));
-      const fetchedItems = (data.Items ?? []).map(item => unmarshall(item));
+      const fetchedItems = (data.Items ?? []).map((item: any) => unmarshall(item));
       
       for (const item of fetchedItems) {
         accumulatedItems.push(item);
