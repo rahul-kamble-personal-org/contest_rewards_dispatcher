@@ -70,7 +70,6 @@ jobs:
         terraform plan \
           -var="repo_name=${REPO_NAME}" \
           -var="commit_sha=${{ steps.slug.outputs.sha8 }}" \
-          -var="operation=${{ github.event.inputs.operation }}" \
           -out=tfplan \
           -lock=true \
           -lock-timeout=300s
@@ -98,7 +97,6 @@ jobs:
         terraform destroy -auto-approve \
           -var="repo_name=${REPO_NAME}" \
           -var="commit_sha=${{ steps.slug.outputs.sha8 }}" \
-          -var="operation=destroy"
       timeout-minutes: 30
 
     - name: Check Apply/Destroy Status
