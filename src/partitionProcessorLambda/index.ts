@@ -130,6 +130,7 @@ async function processPartitionInBatches(
 }
 
 async function invokeBatchProcessor(batch: any, contestId: string, winningSelectionId: string, partitionId: string, batchNumber: number) {
+  console.log('thisisit1')
   const params: InvokeCommandInput = {
     FunctionName: process.env.BATCH_PROCESSOR_FUNCTION_NAME || 'batchProcessorLambda',
     InvocationType: 'Event',
@@ -141,6 +142,7 @@ async function invokeBatchProcessor(batch: any, contestId: string, winningSelect
       batchNumber
     })
   };
+  console.log('thisisit2',params)
 
   const maxRetries = 3;
   const retryDelay = 1000; // 1 second
