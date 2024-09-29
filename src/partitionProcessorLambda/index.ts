@@ -90,11 +90,14 @@ async function processPartitionInBatches(
     const params: QueryCommandInput = {
       TableName: "ContestParticipants2",
       IndexName: "SelectionPartitionIndex",
-      KeyConditionExpression: "contestId = :cid AND selectionPartitionId = :spid",
+      KeyConditionExpression: 
+      "contestId = :cid AND selectionPartitionId = :spid",
       ExpressionAttributeValues: marshall({
         ":cid": contestId,
         ":spid":  `${winningSelectionId}#${partitionId}`
-      })
+      }),
+      ExclusiveStartKey: lastEvaluatedKey,
+      Limit: 80
     };
 
     try {

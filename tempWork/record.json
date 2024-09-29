@@ -1,0 +1,23 @@
+{
+    "contestId": "contest_123" ,
+    "userId": "0052743f-75f8-4c2f-af57-357c066f9f00",
+    "partitionId": 2,
+    "selectionId":"selection_winner",
+    "selectionPartitionId": "selection_winner#2"
+}
+
+{
+    "contestId": "contest_123" ,
+    "userId": "0052743f-75f8-4c2f-af57-357c066f9f00",
+    "selectionId":"selection_winner",
+}
+
+
+
+
+
+{
+    "userID":"0052743f-75f8-4c2f-af57-357c066f9f00",
+    "contestId": "chess-765647" ,
+    "selectionId":"1A2B3A4B5A",
+}
