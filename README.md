@@ -1,4 +1,4 @@
-
+Youtube Video - https://youtu.be/lSXb3sRePMk?si=gO1Ovg-JF8CYKpho
 
 This repo sets up an AWS infrastructure for a contest processing system. Here's an overview of the main components:
 
